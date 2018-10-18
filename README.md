@@ -42,6 +42,14 @@ pod 'Bonjour'
   func netServiceDidPublish(_ netService: NetService)
   func netServiceDidNotPublish(_ netService: NetService)
   ```
+* Send messages/data:
+  ```Swift
+  // Send strings
+  BonjourService.shared.send(message: String)
+
+  // Send dictionaries
+  BonjourService.shared.send(data: [AnyHashable : Any])
+  ```
 
 ## Author
 
