@@ -1,6 +1,0 @@
-// Module Map
-
-module GCDAsyncSocket [system][extern_c] {
-    header "GCDAsyncSocket.h"
-    export *
-}
