@@ -5,7 +5,10 @@ import os.log
 public typealias InvitationCompletionHandler = (_ result: Result<Peer, Error>) -> Void
 
 public protocol BonjourSessionDelegate: AnyObject {
-    func didReceive(data: Data, from peer: String)
+    func didStartRecieving(resourceName: String, from peer: Peer)
+    func isRecieving(resourceName: String, from peer: Peer, progress: Double)
+    func didFinishRecieving(resourceName: String, from peer: Peer, at localURL: URL?, with error: Error?)
+    func didReceive(data: Data, from peer: Peer)
     func didDiscover(peer: Peer)
     func didLose(peer: Peer)
     func didConnect(to peer: Peer)
@@ -137,6 +140,7 @@ final public class BonjourSession: NSObject {
     }()
 
     private var invitationCompletionHandlers: [MCPeerID: InvitationCompletionHandler] = [:]
+    private var progressWatchers: [String: ProgressWatcher] = [:]
 
 
     // MARK: - Init
@@ -182,8 +186,9 @@ final public class BonjourSession: NSObject {
 
 
 
-    public func broadcast(_ data: Data) throws {
-        guard !self.session.connectedPeers.isEmpty else {
+    public func broadcast(_ data: Data) {
+        guard !self.session.connectedPeers.isEmpty
+        else {
             #if DEBUG
             os_log("Not broadcasting message: no connected peers",
                    log: .default,
@@ -192,17 +197,56 @@ final public class BonjourSession: NSObject {
             return
         }
 
-        try self.session.send(data,
-                              toPeers: self.session.connectedPeers,
-                              with: .reliable)
+        do {
+            try self.session.send(data,
+                                  toPeers: self.session.connectedPeers,
+                                  with: .reliable)
+        } catch {
+            #if DEBUG
+            os_log("Could not send data",
+                   log: .default,
+                   type: .error)
+            #endif
+            return
+        }
+    }
+
+    public func sendResource(at url: URL,
+                             with name: String,
+                             to peer: Peer,
+                             progressHandler: ((Double) -> Void)?,
+                             completionHandler: ((Error?) -> Void)?) {
+        let completion: ((Error?) -> Void)? = { error in
+            self.progressWatchers[name] = nil
+            completionHandler?(error)
+        }
+        let progress = self.session.sendResource(at: url,
+                                                 withName: name,
+                                                 toPeer: peer.peerID,
+                                                 withCompletionHandler: completion)
+        if let progress = progress,
+            let progressHandler = progressHandler {
+            let progressWatcher = ProgressWatcher(progress: progress)
+            self.progressWatchers[name] = progressWatcher
+            progressWatcher.progressHandler = progressHandler
+        }
     }
 
     public func send(_ data: Data,
-              to peers: [Peer]) throws {
+                     to peers: [Peer]) {
         let ids = peers.map { $0.peerID }
-        try self.session.send(data,
-                              toPeers: ids,
-                              with: .reliable)
+        do {
+            try self.session.send(data,
+                                  toPeers: ids,
+                                  with: .reliable)
+        } catch {
+            #if DEBUG
+            os_log("Could not send data",
+                   log: .default,
+                   type: .error)
+            #endif
+            return
+        }
     }
 
     public func invite(_ peer: Peer,
@@ -221,6 +265,43 @@ final public class BonjourSession: NSObject {
         self.availablePeers.insert(peer)
         self.delegate?.didDiscover(peer: peer)
     }
+
+    private func handleDidStartRecieving(resourceName: String,
+                                         from peerID: MCPeerID,
+                                         progress: Progress) {
+        guard let peer = self.availablePeers.first(where: { $0.peerID == peerID })
+        else { return }
+        let progressWatcher = ProgressWatcher(progress: progress)
+        self.progressWatchers[resourceName] = progressWatcher
+        progressWatcher.progressHandler = { progress in
+            self.delegate?.isRecieving(resourceName: resourceName,
+                                       from: peer,
+                                       progress: progress)
+        }
+        self.delegate?.didStartRecieving(resourceName: resourceName,
+                                         from: peer)
+    }
+
+    private func handleDidFinishReceiving(resourceName: String,
+                                          from peerID: MCPeerID,
+                                          at localURL: URL?,
+                                          withError error: Error?) {
+        guard let peer = self.availablePeers.first(where: { $0.peerID == peerID })
+        else { return }
+        self.progressWatchers[resourceName] = nil
+        self.delegate?.didFinishRecieving(resourceName: resourceName,
+                                          from: peer,
+                                          at: localURL,
+                                          with: error)
+    }
+
+    private func handleDidRecieved(_ data: Data,
+                                   peerID: MCPeerID) {
+           guard let peer = self.availablePeers.first(where: { $0.peerID == peerID })
+           else { return }
+           self.delegate?.didReceive(data: data,
+                                     from: peer)
+       }
 
     private func handlePeerRemoved(_ peerID: MCPeerID) {
         guard let peer = self.availablePeers.first(where: { $0.peerID == peerID })
@@ -288,38 +369,44 @@ extension BonjourSession: MCSessionDelegate {
     }
 
     public func session(_ session: MCSession,
-                 didReceive data: Data,
-                 fromPeer peerID: MCPeerID) {
+                        didReceive data: Data,
+                        fromPeer peerID: MCPeerID) {
         #if DEBUG
         os_log("%{public}@", log: .default, type: .debug, #function)
         #endif
-        self.delegate?.didReceive(data: data,
-                                  from: peerID.displayName)
+        self.handleDidRecieved(data, peerID: peerID)
     }
 
     public func session(_ session: MCSession,
-                 didReceive stream: InputStream,
-                 withName streamName: String,
-                 fromPeer peerID: MCPeerID) {
-        #if DEBUG
-        os_log("%{public}@", log: .default, type: .debug, #function)
-        #endif
-    }
-
-    public func session(_ session: MCSession,
-                 didStartReceivingResourceWithName resourceName: String,
-                 fromPeer peerID: MCPeerID,
-                 with progress: Progress) {
+                        didReceive stream: InputStream,
+                        withName streamName: String,
+                        fromPeer peerID: MCPeerID) {
         #if DEBUG
         os_log("%{public}@", log: .default, type: .debug, #function)
         #endif
     }
 
     public func session(_ session: MCSession,
-                 didFinishReceivingResourceWithName resourceName: String,
-                 fromPeer peerID: MCPeerID,
-                 at localURL: URL?,
-                 withError error: Error?) {
+                        didStartReceivingResourceWithName resourceName: String,
+                        fromPeer peerID: MCPeerID,
+                        with progress: Progress) {
+        self.handleDidStartRecieving(resourceName: resourceName,
+                                     from: peerID,
+                                     progress: progress)
+        #if DEBUG
+        os_log("%{public}@", log: .default, type: .debug, #function)
+        #endif
+    }
+
+    public func session(_ session: MCSession,
+                        didFinishReceivingResourceWithName resourceName: String,
+                        fromPeer peerID: MCPeerID,
+                        at localURL: URL?,
+                        withError error: Error?) {
+        self.handleDidFinishReceiving(resourceName: resourceName,
+                                      from: peerID,
+                                      at: localURL,
+                                      withError: error)
         #if DEBUG
         os_log("%{public}@", log: .default, type: .debug, #function)
         #endif
