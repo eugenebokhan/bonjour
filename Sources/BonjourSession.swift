@@ -108,7 +108,7 @@ final public class BonjourSession: NSObject {
         didSet {
             guard availablePeers != oldValue
             else { return }
-            DispatchQueue.main.async {
+            self.sessionQueue.async {
                 self.delegate?.availablePeersDidChange(peers: Array(self.availablePeers))
             }
         }
@@ -141,6 +141,7 @@ final public class BonjourSession: NSObject {
 
     private var invitationCompletionHandlers: [MCPeerID: InvitationCompletionHandler] = [:]
     private var progressWatchers: [String: ProgressWatcher] = [:]
+    private let sessionQueue = DispatchQueue(label: "Bonjour.Session", qos: .userInteractive)
 
 
     // MARK: - Init
@@ -184,8 +185,6 @@ final public class BonjourSession: NSObject {
         }
     }
 
-
-
     public func broadcast(_ data: Data) {
         guard !self.session.connectedPeers.isEmpty
         else {
@@ -220,6 +219,7 @@ final public class BonjourSession: NSObject {
             self.progressWatchers[name] = nil
             completionHandler?(error)
         }
+
         let progress = self.session.sendResource(at: url,
                                                  withName: name,
                                                  toPeer: peer.peerID,
@@ -350,7 +350,7 @@ extension BonjourSession: MCSessionDelegate {
 
         let handler = self.invitationCompletionHandlers[peerID]
 
-        DispatchQueue.main.async {
+        self.sessionQueue.async {
             switch state {
             case .connected:
                 handler?(.success(peer))
@@ -419,8 +419,8 @@ extension BonjourSession: MCSessionDelegate {
 extension BonjourSession: MCNearbyServiceBrowserDelegate {
 
     public func browser(_ browser: MCNearbyServiceBrowser,
-                 foundPeer peerID: MCPeerID,
-                 withDiscoveryInfo info: [String : String]?) {
+                        foundPeer peerID: MCPeerID,
+                        withDiscoveryInfo info: [String : String]?) {
         #if DEBUG
         os_log("%{public}@", log: .default, type: .debug, #function)
         #endif
@@ -486,9 +486,9 @@ extension BonjourSession: MCNearbyServiceBrowserDelegate {
 extension BonjourSession: MCNearbyServiceAdvertiserDelegate {
 
     public func advertiser(_ advertiser: MCNearbyServiceAdvertiser,
-                    didReceiveInvitationFromPeer peerID: MCPeerID,
-                    withContext context: Data?,
-                    invitationHandler: @escaping (Bool, MCSession?) -> Void) {
+                           didReceiveInvitationFromPeer peerID: MCPeerID,
+                           withContext context: Data?,
+                           invitationHandler: @escaping (Bool, MCSession?) -> Void) {
         #if DEBUG
         os_log("%{public}@", log: .default, type: .debug, #function)
         #endif

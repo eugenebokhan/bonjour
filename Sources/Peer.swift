@@ -9,7 +9,7 @@ public struct Peer: Hashable, Identifiable {
     let peerID: MCPeerID
     public internal(set) var isConnected: Bool
 
-    init(peer: MCPeerID, discoveryInfo: [String: String]?) throws {
+    public init(peer: MCPeerID, discoveryInfo: [String: String]?) throws {
         /**
          According to Apple's docs, every MCPeerID is unique, therefore encoding it
          and hashing the resulting data is a good way to generate an unique identifier

@@ -2,21 +2,25 @@ import Foundation
 
 class ProgressWatcher: NSObject {
 
+    enum ObservationKeyPath: String {
+        case fractionCompleted
+    }
+
     var progressHandler: ((Double) -> Void)?
 
     private var progress: Progress
     private var kvoContext = 0
+    private let observationQueue = DispatchQueue(label: "Bonjour.ProgressWatcher", qos: .userInteractive)
 
     init(progress: Progress) {
         self.progress = progress
         super.init()
         progress.addObserver(self,
-                             forKeyPath: "fractionCompleted",
+                             forKeyPath: ObservationKeyPath.fractionCompleted.rawValue,
                              options: [],
                              context: &self.kvoContext)
     }
     deinit {
-        print("deinit of \(Self.self)")
         self.progress.removeObserver(self,
                                      forKeyPath: "fractionCompleted", 
                                      context: &self.kvoContext)
@@ -26,21 +30,21 @@ class ProgressWatcher: NSObject {
                                of object: Any?,
                                change: [NSKeyValueChangeKey : Any]?,
                                context: UnsafeMutableRawPointer?) {
-        if context == &self.kvoContext {
-            DispatchQueue.main.async {
+        self.observationQueue.async {
+            if context == &self.kvoContext {
                 switch keyPath {
-                case "fractionCompleted":
+                case ObservationKeyPath.fractionCompleted.rawValue:
                     if let progress = object as? Progress {
                         self.progressHandler?(progress.fractionCompleted)
                     }
                 default: break
                 }
+            } else {
+                super.observeValue(forKeyPath: keyPath,
+                                   of: object,
+                                   change: change,
+                                   context: context)
             }
-        } else {
-            super.observeValue(forKeyPath: keyPath,
-                               of: object,
-                               change: change,
-                               context: context)
         }
     }
 }
