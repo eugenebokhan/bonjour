@@ -1,13 +1,14 @@
 # Bonjour
 
-Bonjour is a little singleton service for easy communication with `bonjour protocol supported` devices.
+Bonjour is a little service for easy communication with [`bonjour protocol`](https://developer.apple.com/bonjour/) supported devices.
 
 ## Requirements
 
-* Xcode 10
-* Swift 4.2
+* Swift `5.2`
+* iOS `11.0`
+* macOS `10.13`
 
-## How To Install
+## Install via [`Cocoapods`](https://cocoapods.org)
 
 ```ruby
 pod 'Bonjour'
@@ -15,45 +16,70 @@ pod 'Bonjour'
 
 ## How To Use
 
-* Setup delegates:
-  ```swift
-  // Add your class to delegates dictionary
-  BonjourService.shared.delegates["MyDelegateClass"] = self
+* Init session
 
-  // Remove your class from delegates when it's necessary
-  BonjourService.shared.delegates.removeValue(forKey: "MyDelegateClass")
+  ```swift
+  let bonjour = BonjourSession(configuration: .init(configuration: .default))
   ```
-* Start/stop broadcasting:
+
+* Start / stop session:
   ```swift
   // Start broadcasting
-  BonjourService.shared.startBroadcasting()
+  bonjour.start()
 
   // Stop broadcasting
-  BonjourService.shared.stopBroadcasting()
+  bonjour.stop()
   ```
-* Implement delegate methods:
+* Implement optional handlers:
+
   ```swift
-  func updateConnectionStatus(isConnected: Bool)
-  func didConnect(to host: String!, port: UInt16)
-  func didAcceptNewSocket()
-  func socketDidDisconnect()
-  func didWriteData(tag: Int)
-  func didRead(data: Data, tag: Int)  
-  func netServiceDidPublish(_ netService: NetService)
-  func netServiceDidNotPublish(_ netService: NetService)
+  // On start receiving large package of data.
+  bonjour.onStartRecieving = { resourceName, peer in ... }
+
+  // Track large package of data receiving progress.
+  bonjour.onReceiving = { resourceName, progress in ... }
+
+  // On finish receiving large package of data.
+  bonjour.onFinishRecieving = { resourceName, peer, localURL, error in ... }
+
+  // On small package of data receive.
+  bonjour.onReceive = { data, peer in ... }
+
+  // On new peer discovery.
+  bonjour.onPeerDiscovery = { peer in ... }
+
+  // On loss of peer.
+  bonjour.onPeerLoss = { peer in ... }
+
+  // On connection to peer.
+  bonjour.onPeerConnection = { peer in ... }
+
+  // On disconnection from peer.
+  bonjour.onPeerDisconnection = { peer in ... }
+
+  // On update of list of available peers.
+  bonjour.onAvailablePeersDidChange = { availablePeers in ... }
   ```
+
 * Send messages/data:
   ```Swift
-  // Send strings
-  BonjourService.shared.send(message: String)
+  // Send small package of data to all connected peers.
+  bonjour.broadcast(_ data: Data)
 
-  // Send dictionaries
-  BonjourService.shared.send(data: [AnyHashable : Any])
+  // Send small package of data to certain amount of connected peers.
+  bonjour.send(_ data: Data, to peers: [Peer])
+
+  // Send large package of data to a certain peer.
+  bonjour.sendResource(at url: URL,
+                       resourceName: String,
+                       to peer: Peer,
+                       progressHandler: ((Double) -> Void)?,
+                       completionHandler: ((Error?) -> Void)?)
   ```
 
 ## Author
 
-| [<img src="https://avatars1.githubusercontent.com/u/8983647?s=460&amp;v=4" width="120px;"/>](https://github.com/eugenebokhan)   | [Eugene Bokhan](https://github.com/eugenebokhan)<br/><br/><sub>iOS Software Engineer</sub><br/> [![Twitter][1.1]][1] [![Github][2.1]][2] [![LinkedIn][3.1]][3]|
+| [<img src="https://avatars1.githubusercontent.com/u/8983647?s=460&amp;v=4" width="120px;"/>](https://github.com/eugenebokhan)   | [Eugene Bokhan](https://github.com/eugenebokhan)<br/><br/><sub>Software Engineer</sub><br/> [![Twitter][1.1]][1] [![Github][2.1]][2] [![LinkedIn][3.1]][3]|
 | - | :- |
 
 [1.1]: http://i.imgur.com/wWzX9uB.png (twitter icon without padding)
@@ -66,4 +92,4 @@ pod 'Bonjour'
 
 ## License
 
-[Project's license](LICENSE) is based on the BSD 3-Clause.
+Project's license is [MIT](LICENSE).
