@@ -8,7 +8,7 @@ class ProgressWatcher: NSObject {
 
     var progressHandler: ((Double) -> Void)?
 
-    private var progress: Progress
+    let progress: Progress
     private var kvoContext = 0
     private let observationQueue = DispatchQueue(label: "Bonjour.ProgressWatcher", qos: .userInteractive)
 

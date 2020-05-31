@@ -4,18 +4,6 @@ import os.log
 
 public typealias InvitationCompletionHandler = (_ result: Result<Peer, Error>) -> Void
 
-public protocol BonjourSessionDelegate: AnyObject {
-    func didStartRecieving(resourceName: String, from peer: Peer)
-    func isRecieving(resourceName: String, from peer: Peer, progress: Double)
-    func didFinishRecieving(resourceName: String, from peer: Peer, at localURL: URL?, with error: Error?)
-    func didReceive(data: Data, from peer: Peer)
-    func didDiscover(peer: Peer)
-    func didLose(peer: Peer)
-    func didConnect(to peer: Peer)
-    func didDisconnect(from peer: Peer)
-    func availablePeersDidChange(peers: [Peer])
-}
-
 final public class BonjourSession: NSObject {
 
     // MARK: - Type Definitions
@@ -98,7 +86,7 @@ final public class BonjourSession: NSObject {
         public static let combined: Usage = [.receive, .transmit]
     }
 
-    // MARK: - Properties
+    // MARK: - Public Properties
 
     public let usage: Usage
     public let configuration: Configuration
@@ -106,15 +94,28 @@ final public class BonjourSession: NSObject {
 
     public private(set) var availablePeers: Set<Peer> = [] {
         didSet {
-            guard availablePeers != oldValue
+            guard self.availablePeers != oldValue
             else { return }
             self.sessionQueue.async {
-                self.delegate?.availablePeersDidChange(peers: Array(self.availablePeers))
+                self.onAvailablePeersDidChange?(Array(self.availablePeers))
             }
         }
     }
+    public var connectedPeers: Set<Peer> { self.availablePeers.filter { $0.isConnected } }
 
-    public weak var delegate: BonjourSessionDelegate? = nil
+    // MARK: - Handlers
+
+    public var onStartRecieving: ((_ resourceName: String, _ peer: Peer) -> Void)?
+    public var onRecieving: ((_ resourceName: String, _ peer: Peer, _ progress: Double) -> Void)?
+    public var onFinishRecieving: ((_ resourceName: String, _ peer: Peer, _ localURL: URL?, _ error: Error?) -> Void)?
+    public var onReceive: ((_ data: Data, _ peer: Peer) -> Void)?
+    public var onDiscover: ((_ peer: Peer) -> Void)?
+    public var onLoose: ((_ peer: Peer) -> Void)?
+    public var onConnect: ((_  peer: Peer) -> Void)?
+    public var onDisconnect: ((_  peer: Peer) -> Void)?
+    public var onAvailablePeersDidChange: ((_ peers: [Peer]) -> Void)?
+
+    // MARK: - Private Properties
 
     private lazy var session: MCSession = {
         let session = MCSession(peer: self.localPeerID,
@@ -185,6 +186,18 @@ final public class BonjourSession: NSObject {
         }
     }
 
+    public func invite(_ peer: Peer,
+                       with context: Data?,
+                       timeout: TimeInterval,
+                       completion: InvitationCompletionHandler?) {
+        self.invitationCompletionHandlers[peer.peerID] = completion
+
+        self.browser.invitePeer(peer.peerID,
+                                to: self.session,
+                                withContext: context,
+                                timeout: timeout)
+    }
+
     public func broadcast(_ data: Data) {
         guard !self.session.connectedPeers.isEmpty
         else {
@@ -210,34 +223,11 @@ final public class BonjourSession: NSObject {
         }
     }
 
-    public func sendResource(at url: URL,
-                             with name: String,
-                             to peer: Peer,
-                             progressHandler: ((Double) -> Void)?,
-                             completionHandler: ((Error?) -> Void)?) {
-        let completion: ((Error?) -> Void)? = { error in
-            self.progressWatchers[name] = nil
-            completionHandler?(error)
-        }
-
-        let progress = self.session.sendResource(at: url,
-                                                 withName: name,
-                                                 toPeer: peer.peerID,
-                                                 withCompletionHandler: completion)
-        if let progress = progress,
-            let progressHandler = progressHandler {
-            let progressWatcher = ProgressWatcher(progress: progress)
-            self.progressWatchers[name] = progressWatcher
-            progressWatcher.progressHandler = progressHandler
-        }
-    }
-
     public func send(_ data: Data,
                      to peers: [Peer]) {
-        let ids = peers.map { $0.peerID }
         do {
             try self.session.send(data,
-                                  toPeers: ids,
+                                  toPeers: peers.map { $0.peerID },
                                   with: .reliable)
         } catch {
             #if DEBUG
@@ -249,21 +239,33 @@ final public class BonjourSession: NSObject {
         }
     }
 
-    public func invite(_ peer: Peer,
-                       with context: Data?,
-                       timeout: TimeInterval,
-                       completion: InvitationCompletionHandler?) {
-        self.invitationCompletionHandlers[peer.peerID] = completion
+    public func sendResource(at url: URL,
+                             resourceName: String,
+                             to peer: Peer,
+                             progressHandler: ((Double) -> Void)?,
+                             completionHandler: ((Error?) -> Void)?) {
+        let completion: ((Error?) -> Void)? = { error in
+            self.progressWatchers[resourceName] = nil
+            completionHandler?(error)
+        }
 
-        self.browser.invitePeer(peer.peerID,
-                                to: self.session,
-                                withContext: context,
-                                timeout: timeout)
+        let progress = self.session.sendResource(at: url,
+                                                 withName: resourceName,
+                                                 toPeer: peer.peerID,
+                                                 withCompletionHandler: completion)
+        if let progress = progress,
+            let progressHandler = progressHandler {
+            let progressWatcher = ProgressWatcher(progress: progress)
+            self.progressWatchers[resourceName] = progressWatcher
+            progressWatcher.progressHandler = progressHandler
+        }
     }
+
+    // MARK: - Private
 
     private func didDiscover(_ peer: Peer) {
         self.availablePeers.insert(peer)
-        self.delegate?.didDiscover(peer: peer)
+        self.onDiscover?(peer)
     }
 
     private func handleDidStartRecieving(resourceName: String,
@@ -274,12 +276,9 @@ final public class BonjourSession: NSObject {
         let progressWatcher = ProgressWatcher(progress: progress)
         self.progressWatchers[resourceName] = progressWatcher
         progressWatcher.progressHandler = { progress in
-            self.delegate?.isRecieving(resourceName: resourceName,
-                                       from: peer,
-                                       progress: progress)
+            self.onRecieving?(resourceName, peer, progress)
         }
-        self.delegate?.didStartRecieving(resourceName: resourceName,
-                                         from: peer)
+        self.onStartRecieving?(resourceName, peer)
     }
 
     private func handleDidFinishReceiving(resourceName: String,
@@ -289,35 +288,31 @@ final public class BonjourSession: NSObject {
         guard let peer = self.availablePeers.first(where: { $0.peerID == peerID })
         else { return }
         self.progressWatchers[resourceName] = nil
-        self.delegate?.didFinishRecieving(resourceName: resourceName,
-                                          from: peer,
-                                          at: localURL,
-                                          with: error)
+        self.onFinishRecieving?(resourceName, peer, localURL, error)
     }
 
     private func handleDidRecieved(_ data: Data,
                                    peerID: MCPeerID) {
            guard let peer = self.availablePeers.first(where: { $0.peerID == peerID })
            else { return }
-           self.delegate?.didReceive(data: data,
-                                     from: peer)
+           self.onReceive?(data, peer)
        }
 
     private func handlePeerRemoved(_ peerID: MCPeerID) {
         guard let peer = self.availablePeers.first(where: { $0.peerID == peerID })
         else { return }
         self.availablePeers.remove(peer)
-        self.delegate?.didLose(peer: peer)
+        self.onLoose?(peer)
     }
 
     private func handlePeerConnected(_ peer: Peer) {
         self.setConnected(true, on: peer)
-        self.delegate?.didConnect(to: peer)
+        self.onConnect?(peer)
     }
 
     private func handlePeerDisconnected(_ peer: Peer) {
         self.setConnected(false, on: peer)
-        self.delegate?.didDisconnect(from: peer)
+        self.onDisconnect?(peer)
     }
 
     private func setConnected(_ connected: Bool, on peer: Peer) {
@@ -355,11 +350,11 @@ extension BonjourSession: MCSessionDelegate {
             case .connected:
                 handler?(.success(peer))
                 self.invitationCompletionHandlers[peerID] = nil
-                self.delegate?.didConnect(to: peer)
+                self.handlePeerConnected(peer)
             case .notConnected:
                 handler?(.failure(BonjourSessionError.connectionToPeerfailed))
                 self.invitationCompletionHandlers[peerID] = nil
-                self.delegate?.didDisconnect(from: peer)
+                self.handlePeerDisconnected(peer)
             case .connecting:
                 break
             @unknown default:
