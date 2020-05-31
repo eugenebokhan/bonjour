@@ -105,14 +105,14 @@ final public class BonjourSession: NSObject {
 
     // MARK: - Handlers
 
-    public var onStartRecieving: ((_ resourceName: String, _ peer: Peer) -> Void)?
-    public var onRecieving: ((_ resourceName: String, _ peer: Peer, _ progress: Double) -> Void)?
-    public var onFinishRecieving: ((_ resourceName: String, _ peer: Peer, _ localURL: URL?, _ error: Error?) -> Void)?
+    public var onStartReceiving: ((_ resourceName: String, _ peer: Peer) -> Void)?
+    public var onReceiving: ((_ resourceName: String, _ peer: Peer, _ progress: Double) -> Void)?
+    public var onFinishReceiving: ((_ resourceName: String, _ peer: Peer, _ localURL: URL?, _ error: Error?) -> Void)?
     public var onReceive: ((_ data: Data, _ peer: Peer) -> Void)?
-    public var onDiscover: ((_ peer: Peer) -> Void)?
-    public var onLoose: ((_ peer: Peer) -> Void)?
-    public var onConnect: ((_  peer: Peer) -> Void)?
-    public var onDisconnect: ((_  peer: Peer) -> Void)?
+    public var onPeerDiscovery: ((_ peer: Peer) -> Void)?
+    public var onPeerLoss: ((_ peer: Peer) -> Void)?
+    public var onPeerConnection: ((_  peer: Peer) -> Void)?
+    public var onPeerDisconnection: ((_  peer: Peer) -> Void)?
     public var onAvailablePeersDidChange: ((_ peers: [Peer]) -> Void)?
 
     // MARK: - Private Properties
@@ -265,10 +265,10 @@ final public class BonjourSession: NSObject {
 
     private func didDiscover(_ peer: Peer) {
         self.availablePeers.insert(peer)
-        self.onDiscover?(peer)
+        self.onPeerDiscovery?(peer)
     }
 
-    private func handleDidStartRecieving(resourceName: String,
+    private func handleDidStartReceiving(resourceName: String,
                                          from peerID: MCPeerID,
                                          progress: Progress) {
         guard let peer = self.availablePeers.first(where: { $0.peerID == peerID })
@@ -276,9 +276,9 @@ final public class BonjourSession: NSObject {
         let progressWatcher = ProgressWatcher(progress: progress)
         self.progressWatchers[resourceName] = progressWatcher
         progressWatcher.progressHandler = { progress in
-            self.onRecieving?(resourceName, peer, progress)
+            self.onReceiving?(resourceName, peer, progress)
         }
-        self.onStartRecieving?(resourceName, peer)
+        self.onStartReceiving?(resourceName, peer)
     }
 
     private func handleDidFinishReceiving(resourceName: String,
@@ -288,10 +288,10 @@ final public class BonjourSession: NSObject {
         guard let peer = self.availablePeers.first(where: { $0.peerID == peerID })
         else { return }
         self.progressWatchers[resourceName] = nil
-        self.onFinishRecieving?(resourceName, peer, localURL, error)
+        self.onFinishReceiving?(resourceName, peer, localURL, error)
     }
 
-    private func handleDidRecieved(_ data: Data,
+    private func handleDidReceived(_ data: Data,
                                    peerID: MCPeerID) {
            guard let peer = self.availablePeers.first(where: { $0.peerID == peerID })
            else { return }
@@ -302,17 +302,17 @@ final public class BonjourSession: NSObject {
         guard let peer = self.availablePeers.first(where: { $0.peerID == peerID })
         else { return }
         self.availablePeers.remove(peer)
-        self.onLoose?(peer)
+        self.onPeerLoss?(peer)
     }
 
     private func handlePeerConnected(_ peer: Peer) {
         self.setConnected(true, on: peer)
-        self.onConnect?(peer)
+        self.onPeerConnection?(peer)
     }
 
     private func handlePeerDisconnected(_ peer: Peer) {
         self.setConnected(false, on: peer)
-        self.onDisconnect?(peer)
+        self.onPeerDisconnection?(peer)
     }
 
     private func setConnected(_ connected: Bool, on peer: Peer) {
@@ -369,7 +369,7 @@ extension BonjourSession: MCSessionDelegate {
         #if DEBUG
         os_log("%{public}@", log: .default, type: .debug, #function)
         #endif
-        self.handleDidRecieved(data, peerID: peerID)
+        self.handleDidReceived(data, peerID: peerID)
     }
 
     public func session(_ session: MCSession,
@@ -385,7 +385,7 @@ extension BonjourSession: MCSessionDelegate {
                         didStartReceivingResourceWithName resourceName: String,
                         fromPeer peerID: MCPeerID,
                         with progress: Progress) {
-        self.handleDidStartRecieving(resourceName: resourceName,
+        self.handleDidStartReceiving(resourceName: resourceName,
                                      from: peerID,
                                      progress: progress)
         #if DEBUG
