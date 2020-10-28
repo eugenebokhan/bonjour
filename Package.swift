@@ -13,10 +13,6 @@ let package = Package(
                  targets: ["Bonjour"]),
     ],
     targets: [
-        .target(name: "Bonjour",
-                linkerSettings: [
-                    .linkedFramework("MultipeerConnectivity"),
-                    .linkedFramework("CommonCrypto")
-                ])
+        .target(name: "Bonjour")
     ]
 )
