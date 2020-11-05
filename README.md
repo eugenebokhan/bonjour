@@ -8,10 +8,11 @@ Bonjour is a little service for easy communication with [`bonjour protocol`](htt
 * iOS `11.0`
 * macOS `10.13`
 
-## Install via [`Cocoapods`](https://cocoapods.org)
+## Install via [SwiftPM](https://swift.org/package-manager/)
 
-```ruby
-pod 'Bonjour'
+```swift
+.package(url: "https://github.com/eugenebokhan/Bonjour.git",
+         .upToNextMinor(from: "2.1.0"))
 ```
 
 ## How To Use
