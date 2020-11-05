@@ -19,21 +19,27 @@ final public class BonjourSession: NSObject {
         public struct Security {
 
             public typealias InvitationHandler = (Peer, Data?, @escaping (Bool) -> Void) -> Void
+            public typealias CertificateHandler = ([Any]?, MCPeerID, @escaping (Bool) -> Void) -> Void
 
             public var identity: [Any]?
             public var encryptionPreference: MCEncryptionPreference
             public var invitationHandler: InvitationHandler
+            public var certificateHandler: CertificateHandler
 
             public init(identity: [Any]?,
                         encryptionPreference: MCEncryptionPreference,
-                        invitationHandler: @escaping InvitationHandler) {
+                        invitationHandler: @escaping InvitationHandler,
+                        certificateHandler: @escaping CertificateHandler) {
                 self.identity = identity
                 self.encryptionPreference = encryptionPreference
                 self.invitationHandler = invitationHandler
+                self.certificateHandler = certificateHandler
             }
 
             public static let `default` = Security(identity: nil,
-                                                   encryptionPreference: .none) { _, _, closure in closure(true) }
+                                                   encryptionPreference: .none,
+                                                   invitationHandler: { _, _, handler in handler(true) },
+                                                   certificateHandler:  { _, _, handler in handler(true) })
 
         }
 
@@ -42,6 +48,7 @@ final public class BonjourSession: NSObject {
         public var defaults: UserDefaults
         public var security: Security
         public var invitation: Invitation
+        
         public init(serviceType: String,
                     peerName: String,
                     defaults: UserDefaults,
@@ -332,12 +339,13 @@ final public class BonjourSession: NSObject {
 extension BonjourSession: MCSessionDelegate {
 
     public func session(_ session: MCSession,
-                 peer peerID: MCPeerID,
-                 didChange state: MCSessionState) {
+                        peer peerID: MCPeerID,
+                        didChange state: MCSessionState) {
         #if DEBUG
         os_log("%{public}@",
                log: .default,
-               type: .debug, #function)
+               type: .debug,
+               #function)
         #endif
         
         guard let peer = self.availablePeers.first(where: { $0.peerID == peerID })
@@ -367,7 +375,10 @@ extension BonjourSession: MCSessionDelegate {
                         didReceive data: Data,
                         fromPeer peerID: MCPeerID) {
         #if DEBUG
-        os_log("%{public}@", log: .default, type: .debug, #function)
+        os_log("%{public}@",
+               log: .default,
+               type: .debug,
+               #function)
         #endif
         self.handleDidReceived(data, peerID: peerID)
     }
@@ -377,7 +388,10 @@ extension BonjourSession: MCSessionDelegate {
                         withName streamName: String,
                         fromPeer peerID: MCPeerID) {
         #if DEBUG
-        os_log("%{public}@", log: .default, type: .debug, #function)
+        os_log("%{public}@",
+               log: .default,
+               type: .debug,
+               #function)
         #endif
     }
 
@@ -389,7 +403,10 @@ extension BonjourSession: MCSessionDelegate {
                                      from: peerID,
                                      progress: progress)
         #if DEBUG
-        os_log("%{public}@", log: .default, type: .debug, #function)
+        os_log("%{public}@",
+               log: .default,
+               type: .debug,
+               #function)
         #endif
     }
 
@@ -403,7 +420,25 @@ extension BonjourSession: MCSessionDelegate {
                                       at: localURL,
                                       withError: error)
         #if DEBUG
-        os_log("%{public}@", log: .default, type: .debug, #function)
+        os_log("%{public}@",
+               log: .default,
+               type: .debug,
+               #function)
+        #endif
+    }
+    
+    public func session(_ session: MCSession,
+                        didReceiveCertificate certificate: [Any]?,
+                        fromPeer peerID: MCPeerID,
+                        certificateHandler: @escaping (Bool) -> Void) {
+        self.configuration.security.certificateHandler(certificate,
+                                                       peerID,
+                                                       certificateHandler)
+        #if DEBUG
+        os_log("%{public}@",
+               log: .default,
+               type: .debug,
+               #function)
         #endif
     }
 
@@ -417,7 +452,10 @@ extension BonjourSession: MCNearbyServiceBrowserDelegate {
                         foundPeer peerID: MCPeerID,
                         withDiscoveryInfo info: [String : String]?) {
         #if DEBUG
-        os_log("%{public}@", log: .default, type: .debug, #function)
+        os_log("%{public}@",
+               log: .default,
+               type: .debug,
+               #function)
         #endif
 
         do {
@@ -436,13 +474,13 @@ extension BonjourSession: MCNearbyServiceBrowserDelegate {
                 else {
                     #if DEBUG
                     os_log("Custom invite not sent for peer %@",
-                    log: .default,
-                    type: .error,
-                    String(describing: peer))
+                           log: .default,
+                           type: .error,
+                           String(describing: peer))
                     #endif
                     return
                 }
-
+                
                 browser.invitePeer(peerID,
                                    to: self.session,
                                    withContext: invite.context,
@@ -465,14 +503,28 @@ extension BonjourSession: MCNearbyServiceBrowserDelegate {
             #endif
         }
     }
-
+    
     public func browser(_ browser: MCNearbyServiceBrowser,
-                 lostPeer peerID: MCPeerID) {
+                        lostPeer peerID: MCPeerID) {
         #if DEBUG
-        os_log("%{public}@", log: .default, type: .debug, #function)
+        os_log("%{public}@",
+               log: .default,
+               type: .debug,
+               #function)
         #endif
         self.handlePeerRemoved(peerID)
     }
+    
+    public func browser(_ browser: MCNearbyServiceBrowser,
+                        didNotStartBrowsingForPeers error: Error) {
+        #if DEBUG
+        os_log("%{public}@",
+               log: .default,
+               type: .error,
+               #function)
+        #endif
+    }
+    
 
 }
 
@@ -485,7 +537,10 @@ extension BonjourSession: MCNearbyServiceAdvertiserDelegate {
                            withContext context: Data?,
                            invitationHandler: @escaping (Bool, MCSession?) -> Void) {
         #if DEBUG
-        os_log("%{public}@", log: .default, type: .debug, #function)
+        os_log("%{public}@",
+               log: .default,
+               type: .debug,
+               #function)
         #endif
 
         guard let peer = self.availablePeers.first(where: { $0.peerID == peerID })
@@ -496,6 +551,16 @@ extension BonjourSession: MCNearbyServiceAdvertiserDelegate {
             else { return }
             invitationHandler(decision, decision ? self.session : nil)
         })
+    }
+    
+    public func advertiser(_ advertiser: MCNearbyServiceAdvertiser,
+                           didNotStartAdvertisingPeer error: Error) {
+        #if DEBUG
+        os_log("%{public}@",
+               log: .default,
+               type: .error,
+               #function)
+        #endif
     }
 
 }

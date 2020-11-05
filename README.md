@@ -77,18 +77,17 @@ pod 'Bonjour'
                        completionHandler: ((Error?) -> Void)?)
   ```
 
-## Author
+## Info.plist configuration
 
-| [<img src="https://avatars1.githubusercontent.com/u/8983647?s=460&amp;v=4" width="120px;"/>](https://github.com/eugenebokhan)   | [Eugene Bokhan](https://github.com/eugenebokhan)<br/><br/><sub>Software Engineer</sub><br/> [![Twitter][1.1]][1] [![Github][2.1]][2] [![LinkedIn][3.1]][3]|
-| - | :- |
+In order for `BonjourSession` to work when running on iOS 14, you will have to include two keys in your app's Info.plist file.
 
-[1.1]: http://i.imgur.com/wWzX9uB.png (twitter icon without padding)
-[2.1]: http://i.imgur.com/9I6NRUm.png (github icon without padding)
-[3.1]: https://www.kingsfund.org.uk/themes/custom/kingsfund/dist/img/svg/sprite-icon-linkedin.svg (linkedin icon)
+The keys are `Privacy - Local Network Usage Description` (`NSLocalNetworkUsageDescription`) and `Bonjour services` (`NSBonjourServices`).
 
-[1]: https://twitter.com/eugenebokhan
-[2]: https://github.com/eugenebokhan
-[3]: https://www.linkedin.com/in/eugenebokhan/
+For the privacy key, include a human-readable description of what benefit the user gets by allowing your app to access devices on the local network.
+
+The Bonjour services key is an array of service types that your app will browse for. For `BonjourSession`, the entry should be in the format `_servicename._tcp`, where `servicename` is the `serviceType` you've set in your `MultipeerConfiguration`. If you're using the default configuration, the value of this key should be `_Bonjour._tcp`.
+
+**If you do not configure the above keys properly, then `BonjourSession` won't work.**
 
 ## License
 
