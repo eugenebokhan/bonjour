@@ -20,7 +20,7 @@ Bonjour is a little service for easy communication with [`bonjour protocol`](htt
 * Init session
 
   ```swift
-  let bonjour = BonjourSession(configuration: .init(configuration: .default))
+  let bonjour = BonjourSession(configuration: .default)
   ```
 
 * Start / stop session:
